@@ -10,94 +10,91 @@ import tensorflow as tf
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report
 from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.layers import (Input, Dense, Concatenate, GlobalAveragePooling2D,
-                                     Add, ReLU, BatchNormalization, Multiply, Dropout)
+from tensorflow.keras.layers import (
+    Input,
+    Dense,
+    Concatenate,
+    GlobalAveragePooling2D,
+    Add,
+    ReLU,
+    BatchNormalization,
+    Multiply,
+    Dropout,
+)
 from tensorflow.keras.models import Model
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.callbacks import ModelCheckpoint
 import matplotlib.pyplot as plt
+
 warnings.filterwarnings("ignore")
 
 # =========================================================
 # CONFIG
 # =========================================================
 
-CSV_PATH = r"C:\Users\navne\Pictures\Kathakali\dwpose_keypoints.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-IMAGE_ROOT =  r"C:\Users\navne\Pictures\Kathakali\Uniform_Skeletal_Images"
+CSV_PATH = os.path.join(BASE_DIR, "dwpose_keypoints.csv")
 
-RESULT_LOG_PATH = r"C:\Users\navne\OneDrive\Desktop\IIITK\Research\Video_Classification\Best_Fusion\results_log.txt"
+IMAGE_ROOT = os.path.join(BASE_DIR, "Uniform_Skeletal_Images")
+
+RESULT_LOG_PATH = os.path.join(BASE_DIR, "results_log.txt")
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
 EPOCHS = 50
 
-TOTAL_KPS = 50        # Total number of keypoints
+TOTAL_KPS = 50  # Total number of keypoints
 
 # =========================================================
 # ANGLE DEFINITIONS
 # =========================================================
 
 ANGLE_TRIPLETS = [
-
     # BODY
     (2, 3, 4),
     (5, 6, 7),
-
     (3, 2, 5),
     (6, 5, 2),
-
     (4, 2, 5),
     (7, 5, 2),
-
     # RIGHT HAND
     (8, 9, 10),
     (9, 10, 11),
     (10, 11, 12),
-
     (8, 13, 14),
     (13, 14, 15),
     (14, 15, 16),
-
     (8, 17, 18),
     (17, 18, 19),
     (18, 19, 20),
-
     (8, 21, 22),
     (21, 22, 23),
     (22, 23, 24),
-
     (8, 25, 26),
     (25, 26, 27),
     (26, 27, 28),
-
     # LEFT HAND
     (29, 30, 31),
     (30, 31, 32),
     (31, 32, 33),
-
     (29, 34, 35),
     (34, 35, 36),
     (35, 36, 37),
-
     (29, 38, 39),
     (38, 39, 40),
     (39, 40, 41),
-
     (29, 42, 43),
     (42, 43, 44),
     (43, 44, 45),
-
     (29, 46, 47),
     (46, 47, 48),
     (47, 48, 49),
-
     # FINGER SPREAD
     (9, 8, 13),
     (13, 8, 17),
     (17, 8, 21),
     (21, 8, 25),
-
     (30, 29, 34),
     (34, 29, 38),
     (38, 29, 42),
@@ -107,6 +104,7 @@ ANGLE_TRIPLETS = [
 # =========================================================
 # UTILITIES
 # =========================================================
+
 
 def normalize_path(path):
 
@@ -120,22 +118,14 @@ def get_xy(kps, idx):
 
 def euclidean(x1, y1, x2, y2):
 
-    return float(
-        np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2)
-    )
+    return float(np.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2))
 
 
 def angle_at_b(ax, ay, bx, by, cx, cy):
 
-    ba = np.array(
-        [ax - bx, ay - by],
-        dtype=np.float32
-    )
+    ba = np.array([ax - bx, ay - by], dtype=np.float32)
 
-    bc = np.array(
-        [cx - bx, cy - by],
-        dtype=np.float32
-    )
+    bc = np.array([cx - bx, cy - by], dtype=np.float32)
 
     n_ba = np.linalg.norm(ba)
     n_bc = np.linalg.norm(bc)
@@ -143,34 +133,27 @@ def angle_at_b(ax, ay, bx, by, cx, cy):
     if n_ba < 1e-6 or n_bc < 1e-6:
         return 0.0
 
-    cos_a = np.clip(
-        np.dot(ba, bc) / (n_ba * n_bc),
-        -1.0,
-        1.0
-    )
+    cos_a = np.clip(np.dot(ba, bc) / (n_ba * n_bc), -1.0, 1.0)
 
-    return float(
-        np.degrees(np.arccos(cos_a))
-    )
+    return float(np.degrees(np.arccos(cos_a)))
+
 
 # =========================================================
 # FEATURE ENGINEERING
 # =========================================================
 
+
 def engineer_features(row_values):
 
-    kps = np.array(
-        row_values,
-        dtype=np.float32
-    )
+    kps = np.array(row_values, dtype=np.float32)
 
     feats = list(kps)
-    
+
     # =====================================================
     # ANGLES
     # =====================================================
 
-    for (a, b, c) in ANGLE_TRIPLETS:
+    for a, b, c in ANGLE_TRIPLETS:
 
         if max(a, b, c) >= TOTAL_KPS:
             feats.append(0.0)
@@ -180,11 +163,7 @@ def engineer_features(row_values):
         bx, by = get_xy(kps, b)
         cx, cy = get_xy(kps, c)
 
-        ang = angle_at_b(
-            ax, ay,
-            bx, by,
-            cx, cy
-        )
+        ang = angle_at_b(ax, ay, bx, by, cx, cy)
 
         feats.append(ang / 180.0)
 
@@ -200,10 +179,7 @@ def engineer_features(row_values):
 
         tx, ty = get_xy(kps, tip_idx)
 
-        dist = euclidean(
-            tx, ty,
-            *r_root
-        )
+        dist = euclidean(tx, ty, *r_root)
 
         feats.append(dist)
 
@@ -212,17 +188,12 @@ def engineer_features(row_values):
 
         tx, ty = get_xy(kps, tip_idx)
 
-        dist = euclidean(
-            tx, ty,
-            *l_root
-        )
+        dist = euclidean(tx, ty, *l_root)
 
         feats.append(dist)
 
-    return np.array(
-        feats,
-        dtype=np.float32
-    )
+    return np.array(feats, dtype=np.float32)
+
 
 # =========================================================
 # LOAD CSV
@@ -236,24 +207,19 @@ print("\nTotal frames:", len(df))
 # PATH PARSING
 # =========================================================
 
+
 def extract_video_name(path):
 
     path = normalize_path(path)
 
-    return os.path.basename(
-        os.path.dirname(path)
-    )
+    return os.path.basename(os.path.dirname(path))
 
 
 def extract_word_name(path):
 
     path = normalize_path(path)
 
-    return os.path.basename(
-        os.path.dirname(
-            os.path.dirname(path)
-        )
-    )
+    return os.path.basename(os.path.dirname(os.path.dirname(path)))
 
 
 def extract_video_number(video_name):
@@ -273,21 +239,16 @@ def extract_video_number(video_name):
 
         return -1
 
+
 # =========================================================
 # APPLY PATH PARSING
 # =========================================================
 
-df["video_name"] = df["skeletal_image_path"].apply(
-    extract_video_name
-)
+df["video_name"] = df["skeletal_image_path"].apply(extract_video_name)
 
-df["word_name"] = df["skeletal_image_path"].apply(
-    extract_word_name
-)
+df["word_name"] = df["skeletal_image_path"].apply(extract_word_name)
 
-df["video_number"] = df["video_name"].apply(
-    extract_video_number
-)
+df["video_number"] = df["video_name"].apply(extract_video_number)
 
 # remove bad rows
 df = df[df["video_number"] != -1].copy()
@@ -298,33 +259,23 @@ print("\nRemaining frames:", len(df))
 # BUILD NEW IMAGE PATHS
 # =========================================================
 
+
 def build_image_path(row):
 
-    original_path = normalize_path(
-        row["skeletal_image_path"]
-    )
+    original_path = normalize_path(row["skeletal_image_path"])
 
-    image_name = os.path.basename(
-        original_path
-    )
+    image_name = os.path.basename(original_path)
 
     video_folder = row["video_name"]
 
     word_name = row["word_name"]
 
-    new_path = os.path.join(
-        IMAGE_ROOT,
-        word_name,
-        video_folder,
-        image_name
-    )
+    new_path = os.path.join(IMAGE_ROOT, word_name, video_folder, image_name)
 
     return new_path
 
-df["new_image_path"] = df.apply(
-    build_image_path,
-    axis=1
-)
+
+df["new_image_path"] = df.apply(build_image_path, axis=1)
 
 print("\nExample image path:")
 print(df["new_image_path"].iloc[0])
@@ -340,13 +291,10 @@ drop_cols = [
     "video_name",
     "video_number",
     "word_name",
-    "label"
+    "label",
 ]
 
-coord_cols = [
-    c for c in df.columns
-    if c not in drop_cols
-]
+coord_cols = [c for c in df.columns if c not in drop_cols]
 
 # =========================================================
 # BUILD POSE FEATURES
@@ -354,15 +302,9 @@ coord_cols = [
 
 print("\nEngineering pose features...")
 
-X_pose = np.vstack([
-
-    engineer_features(row)
-
-    for row in df[coord_cols]
-    .replace(-1, 0)
-    .values
-
-])
+X_pose = np.vstack(
+    [engineer_features(row) for row in df[coord_cols].replace(-1, 0).values]
+)
 
 print("Pose feature shape:", X_pose.shape)
 
@@ -372,16 +314,11 @@ print("Pose feature shape:", X_pose.shape)
 
 le = LabelEncoder()
 
-y = le.fit_transform(
-    df["label"].values
-)
+y = le.fit_transform(df["label"].values)
 
 num_classes = len(le.classes_)
 
-y_cat = to_categorical(
-    y,
-    num_classes
-)
+y_cat = to_categorical(y, num_classes)
 
 # =========================================================
 # FIXED VIDEO SPLIT
@@ -389,15 +326,9 @@ y_cat = to_categorical(
 
 video_nums = df["video_number"].values
 
-train_mask = np.isin(
-    video_nums,
-    [1,2,3,4,5,6,7,8]
-)
+train_mask = np.isin(video_nums, [1, 2, 3, 4, 5, 6, 7, 8])
 
-test_mask = np.isin(
-    video_nums,
-    [9,10]
-)
+test_mask = np.isin(video_nums, [9, 10])
 
 # =========================================================
 # TRAIN / TEST DATAFRAMES
@@ -433,13 +364,9 @@ print("Test samples:", len(test_df))
 
 scaler = StandardScaler()
 
-X_pose_train = scaler.fit_transform(
-    X_pose_train
-)
+X_pose_train = scaler.fit_transform(X_pose_train)
 
-X_pose_test = scaler.transform(
-    X_pose_test
-)
+X_pose_test = scaler.transform(X_pose_test)
 
 # =========================================================
 # CORRELATION ANALYSIS
@@ -447,19 +374,9 @@ X_pose_test = scaler.transform(
 
 print("\nComputing correlations...")
 
-feature_names = [
+feature_names = [f"f_{i}" for i in range(X_pose_train.shape[1])]
 
-    f"f_{i}"
-
-    for i in range(
-        X_pose_train.shape[1]
-    )
-]
-
-df_corr = pd.DataFrame(
-    X_pose_train,
-    columns=feature_names
-)
+df_corr = pd.DataFrame(X_pose_train, columns=feature_names)
 
 corr_matrix = df_corr.corr()
 
@@ -469,17 +386,11 @@ corr_matrix = df_corr.corr()
 
 plt.figure(figsize=(18, 18))
 
-plt.imshow(
-    corr_matrix,
-    cmap='coolwarm',
-    aspect='auto'
-)
+plt.imshow(corr_matrix, cmap="coolwarm", aspect="auto")
 
 plt.colorbar()
 
-plt.title(
-    "Feature Correlation Matrix"
-)
+plt.title("Feature Correlation Matrix")
 
 plt.tight_layout()
 
@@ -489,23 +400,13 @@ plt.show()
 # TOP CORRELATIONS
 # =========================================================
 
-corr_pairs = (
-    corr_matrix.abs()
-    .unstack()
-    .sort_values(
-        ascending=False
-    )
-)
+corr_pairs = corr_matrix.abs().unstack().sort_values(ascending=False)
 
-corr_pairs = corr_pairs[
-    corr_pairs < 1.0
-]
+corr_pairs = corr_pairs[corr_pairs < 1.0]
 
 print("\nTop Correlated Features:\n")
 
-print(
-    corr_pairs.head(50)
-)
+print(corr_pairs.head(50))
 
 # =========================================================
 # REMOVE HIGHLY CORRELATED FEATURES
@@ -514,22 +415,13 @@ print(
 import pandas as pd
 
 # convert train features to dataframe
-df_train_corr = pd.DataFrame(
-    X_pose_train
-)
+df_train_corr = pd.DataFrame(X_pose_train)
 
 # correlation matrix
 corr_matrix = df_train_corr.corr().abs()
 
 # upper triangle only
-upper = corr_matrix.where(
-
-    np.triu(
-        np.ones(corr_matrix.shape),
-        k=1
-    ).astype(bool)
-
-)
+upper = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
 
 # =========================================================
 # THRESHOLD
@@ -541,20 +433,11 @@ threshold = 0.98
 # FIND FEATURES TO DROP
 # =========================================================
 
-to_drop = [
+to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
 
-    column
-
-    for column in upper.columns
-
-    if any(
-        upper[column] > threshold
-    )
-]
-
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("HIGHLY CORRELATED FEATURES")
-print("="*60)
+print("=" * 60)
 
 print("\nNumber of features before removal:")
 print(X_pose_train.shape[1])
@@ -569,21 +452,15 @@ print(to_drop)
 # REMOVE FROM TRAIN
 # =========================================================
 
-X_pose_train = df_train_corr.drop(
-    columns=to_drop
-).values
+X_pose_train = df_train_corr.drop(columns=to_drop).values
 
 # =========================================================
 # REMOVE FROM TEST
 # =========================================================
 
-df_test_corr = pd.DataFrame(
-    X_pose_test
-)
+df_test_corr = pd.DataFrame(X_pose_test)
 
-X_pose_test = df_test_corr.drop(
-    columns=to_drop
-).values
+X_pose_test = df_test_corr.drop(columns=to_drop).values
 
 print("\nNumber of features after removal:")
 print(X_pose_train.shape[1])
@@ -600,43 +477,34 @@ print(X_pose_test.shape)
 
 AUTOTUNE = tf.data.AUTOTUNE
 
+
 def parse_function(img_path, pose_feat, label):
 
     img = tf.io.read_file(img_path)
 
-    img = tf.image.decode_jpeg(
-        img,
-        channels=3
-    )
+    img = tf.image.decode_jpeg(img, channels=3)
 
-    img = tf.image.resize(
-        img,
-        [IMG_SIZE, IMG_SIZE]
-    )
+    img = tf.image.resize(img, [IMG_SIZE, IMG_SIZE])
 
     img = tf.keras.applications.mobilenet_v2.preprocess_input(img)
 
-    return (
-        {
-            "image_input": img,
-            "pose_input": pose_feat
-        },
-        label
-    )
+    return ({"image_input": img, "pose_input": pose_feat}, label)
+
 
 # =========================================================
 # TRAIN DATASET
 # =========================================================
 
-train_dataset = tf.data.Dataset.from_tensor_slices((
-    train_df["new_image_path"].values,
-    X_pose_train.astype(np.float32),
-    y_train.astype(np.float32)
-))
+train_dataset = tf.data.Dataset.from_tensor_slices(
+    (
+        train_df["new_image_path"].values,
+        X_pose_train.astype(np.float32),
+        y_train.astype(np.float32),
+    )
+)
 
 train_dataset = (
-    train_dataset
-    .map(parse_function, num_parallel_calls=AUTOTUNE)
+    train_dataset.map(parse_function, num_parallel_calls=AUTOTUNE)
     .cache()
     .shuffle(2048)
     .batch(BATCH_SIZE)
@@ -647,15 +515,16 @@ train_dataset = (
 # TEST DATASET
 # =========================================================
 
-test_dataset = tf.data.Dataset.from_tensor_slices((
-    test_df["new_image_path"].values,
-    X_pose_test.astype(np.float32),
-    y_test.astype(np.float32)
-))
+test_dataset = tf.data.Dataset.from_tensor_slices(
+    (
+        test_df["new_image_path"].values,
+        X_pose_test.astype(np.float32),
+        y_test.astype(np.float32),
+    )
+)
 
 test_dataset = (
-    test_dataset
-    .map(parse_function, num_parallel_calls=AUTOTUNE)
+    test_dataset.map(parse_function, num_parallel_calls=AUTOTUNE)
     .cache()
     .batch(BATCH_SIZE)
     .prefetch(AUTOTUNE)
@@ -665,73 +534,43 @@ test_dataset = (
 # MOBILENETV2 BRANCH
 # =========================================================
 
-cnn_input = Input(
-    shape=(IMG_SIZE, IMG_SIZE, 3),
-    name="image_input"
-)
+cnn_input = Input(shape=(IMG_SIZE, IMG_SIZE, 3), name="image_input")
 
-base_model = MobileNetV2(
-    include_top=False,
-    weights="imagenet",
-    input_tensor=cnn_input
-)
+base_model = MobileNetV2(include_top=False, weights="imagenet", input_tensor=cnn_input)
 
 base_model.trainable = False
 
-cnn_features = GlobalAveragePooling2D()(
-    base_model.output
-)
+cnn_features = GlobalAveragePooling2D()(base_model.output)
 
 # =========================================================
 # IMAGE PROJECTION
 # =========================================================
 
-cnn_proj = Dense(256)(
-    cnn_features
-)
+cnn_proj = Dense(256)(cnn_features)
 
-cnn_proj = BatchNormalization()(
-    cnn_proj
-)
+cnn_proj = BatchNormalization()(cnn_proj)
 
-cnn_proj = ReLU()(
-    cnn_proj
-)
+cnn_proj = ReLU()(cnn_proj)
 
 # =========================================================
 # POSE FEATURE BRANCH
 # =========================================================
 
-pose_input = Input(
-    shape=(X_pose_train.shape[1],),
-    name="pose_input"
-)
+pose_input = Input(shape=(X_pose_train.shape[1],), name="pose_input")
 
-pose_branch = Dense(512)(
-    pose_input
-)
+pose_branch = Dense(512)(pose_input)
 
-pose_branch = BatchNormalization()(
-    pose_branch
-)
+pose_branch = BatchNormalization()(pose_branch)
 
-pose_branch = ReLU()(
-    pose_branch
-)
+pose_branch = ReLU()(pose_branch)
 
 # ---------------------------------------------------------
 
-pose_branch = Dense(512)(
-    pose_branch
-)
+pose_branch = Dense(512)(pose_branch)
 
-pose_branch = BatchNormalization()(
-    pose_branch
-)
+pose_branch = BatchNormalization()(pose_branch)
 
-pose_branch = ReLU()(
-    pose_branch
-)
+pose_branch = ReLU()(pose_branch)
 
 # =========================================================
 # RESIDUAL CONNECTION
@@ -741,145 +580,84 @@ pose_residual = pose_branch
 
 # ---------------------------------------------------------
 
-pose_branch = Dense(256)(
-    pose_branch
-)
+pose_branch = Dense(256)(pose_branch)
 
-pose_branch = BatchNormalization()(
-    pose_branch
-)
+pose_branch = BatchNormalization()(pose_branch)
 
-pose_branch = ReLU()(
-    pose_branch
-)
+pose_branch = ReLU()(pose_branch)
 
 # =========================================================
 # PROJECT RESIDUAL
 # =========================================================
 
-pose_residual = Dense(256)(
-    pose_residual
-)
+pose_residual = Dense(256)(pose_residual)
 
 # =========================================================
 # ADD RESIDUAL
 # =========================================================
 
-pose_branch = tf.keras.layers.Add()([
-    pose_branch,
-    pose_residual
-])
+pose_branch = tf.keras.layers.Add()([pose_branch, pose_residual])
 
-pose_branch = ReLU()(
-    pose_branch
-)
+pose_branch = ReLU()(pose_branch)
 
 # =========================================================
 # GATED FUSION
 # =========================================================
 
-cnn_gate = Dense(
-    256,
-    activation='sigmoid'
-)(
-    cnn_proj
-)
+cnn_gate = Dense(256, activation="sigmoid")(cnn_proj)
 
-pose_gate = Dense(
-    256,
-    activation='sigmoid'
-)(
-    pose_branch
-)
+pose_gate = Dense(256, activation="sigmoid")(pose_branch)
 
 # ---------------------------------------------------------
 
-gated_cnn = Multiply()([
-    cnn_proj,
-    cnn_gate
-])
+gated_cnn = Multiply()([cnn_proj, cnn_gate])
 
-gated_pose = Multiply()([
-    pose_branch,
-    pose_gate
-])
+gated_pose = Multiply()([pose_branch, pose_gate])
 
 # =========================================================
 # FEATURE FUSION
 # =========================================================
 
-combined = Concatenate()([
-    gated_cnn,
-    gated_pose
-])
+combined = Concatenate()([gated_cnn, gated_pose])
 
 # =========================================================
 # CLASSIFIER
 # =========================================================
 
-x = Dense(512)(
-    combined
-)
+x = Dense(512)(combined)
 
-x = BatchNormalization()(
-    x
-)
+x = BatchNormalization()(x)
 
-x = ReLU()(
-    x
-)
+x = ReLU()(x)
 
-x = Dropout(0.3)(
-    x
-)
+x = Dropout(0.3)(x)
 
 # ---------------------------------------------------------
 
-x = Dense(256)(
-    x
-)
+x = Dense(256)(x)
 
-x = BatchNormalization()(
-    x
-)
+x = BatchNormalization()(x)
 
-x = ReLU()(
-    x
-)
+x = ReLU()(x)
 
-x = Dropout(0.2)(
-    x
-)
+x = Dropout(0.2)(x)
 
 # =========================================================
 # OUTPUT
 # =========================================================
 
-output = Dense(
-    num_classes,
-    activation='softmax'
-)(
-    x
-)
+output = Dense(num_classes, activation="softmax")(x)
 
 # =========================================================
 # FINAL MODEL
 # =========================================================
 
-model = Model(
-    inputs=[
-        cnn_input,
-        pose_input
-    ],
-    outputs=output
-)
+model = Model(inputs=[cnn_input, pose_input], outputs=output)
 
 model.compile(
-    optimizer=tf.keras.optimizers.Adam(
-        learning_rate=1e-4
-    ),
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+    loss="categorical_crossentropy",
+    metrics=["accuracy"],
 )
 
 model.summary()
@@ -890,16 +668,16 @@ model.summary()
 # =========================================================
 
 checkpoint = ModelCheckpoint(
-    filepath=r"C:\Users\navne\OneDrive\Desktop\IIITK\Research\Video_Classification\Best_Fusion\best_fusion_model.keras",
+    filepath=os.path.join(BASE_DIR, "best_fusion_model.keras"),
     monitor="val_accuracy",
     mode="max",
     save_best_only=True,
-    verbose=1
+    verbose=1,
 )
-
 # =========================================================
 # CUSTOM LOGGER CALLBACK
 # =========================================================
+
 
 class EpochLogger(tf.keras.callbacks.Callback):
 
@@ -929,21 +707,16 @@ class EpochLogger(tf.keras.callbacks.Callback):
 
         print(msg)
 
-        with open(
-            RESULT_LOG_PATH,
-            "a",
-            encoding="utf-8"
-        ) as f:
+        with open(RESULT_LOG_PATH, "a", encoding="utf-8") as f:
 
             f.write(msg)
+
 
 # =========================================================
 # INITIALIZE LOGGER
 # =========================================================
 
-epoch_logger = EpochLogger(
-    RESULT_LOG_PATH
-)
+epoch_logger = EpochLogger(RESULT_LOG_PATH)
 
 # =========================================================
 # TRAIN
@@ -953,24 +726,16 @@ history = model.fit(
     train_dataset,
     validation_data=test_dataset,
     epochs=EPOCHS,
-    callbacks=[
-        checkpoint,
-        epoch_logger
-    ]
+    callbacks=[checkpoint, epoch_logger],
 )
 
 # =========================================================
 # PREDICT
 # =========================================================
 
-pred_probs = model.predict(
-    test_dataset
-)
+pred_probs = model.predict(test_dataset)
 
-preds = np.argmax(
-    pred_probs,
-    axis=1
-)
+preds = np.argmax(pred_probs, axis=1)
 
 # =========================================================
 # OUTPUT + LOGS
@@ -987,16 +752,9 @@ with open(RESULT_LOG_PATH, "a", encoding="utf-8") as f:
     # ACCURACY
     # =====================================================
 
-    acc = accuracy_score(
-        y_test_labels,
-        preds
-    )
+    acc = accuracy_score(y_test_labels, preds)
 
-    acc_msg = (
-        "\n" + "="*60 + "\n"
-        f"TEST ACCURACY: {acc:.4f}\n"
-        + "="*60 + "\n"
-    )
+    acc_msg = "\n" + "=" * 60 + "\n" f"TEST ACCURACY: {acc:.4f}\n" + "=" * 60 + "\n"
 
     print(acc_msg)
 
@@ -1006,23 +764,16 @@ with open(RESULT_LOG_PATH, "a", encoding="utf-8") as f:
     # CLASSIFICATION REPORT
     # =====================================================
 
-    labels_present = np.unique(
-        np.concatenate([
-            y_test_labels,
-            preds
-        ])
-    )
+    labels_present = np.unique(np.concatenate([y_test_labels, preds]))
 
-    target_names_present = le.inverse_transform(
-        labels_present
-    )
+    target_names_present = le.inverse_transform(labels_present)
 
     report = classification_report(
         y_test_labels,
         preds,
         labels=labels_present,
         target_names=target_names_present,
-        zero_division=0
+        zero_division=0,
     )
 
     print(report)
@@ -1036,42 +787,27 @@ with open(RESULT_LOG_PATH, "a", encoding="utf-8") as f:
     # BEST EPOCH DETAILS
     # =====================================================
 
-    best_epoch = np.argmax(
-        history.history["val_accuracy"]
-    ) + 1
+    best_epoch = np.argmax(history.history["val_accuracy"]) + 1
 
-    best_acc = np.max(
-        history.history["val_accuracy"]
-    )
+    best_acc = np.max(history.history["val_accuracy"])
 
-    best_train_acc = history.history["accuracy"][
-        best_epoch - 1
-    ]
+    best_train_acc = history.history["accuracy"][best_epoch - 1]
 
-    best_train_loss = history.history["loss"][
-        best_epoch - 1
-    ]
+    best_train_loss = history.history["loss"][best_epoch - 1]
 
-    best_val_loss = history.history["val_loss"][
-        best_epoch - 1
-    ]
+    best_val_loss = history.history["val_loss"][best_epoch - 1]
 
     best_msg = (
         "\n" + "=" * 80 + "\n"
-        "BEST MODEL DETAILS\n"
-        + "=" * 80 + "\n\n"
-
+        "BEST MODEL DETAILS\n" + "=" * 80 + "\n\n"
         f"Best Epoch: {best_epoch}\n"
         f"Best Validation Accuracy: {best_acc:.4f}\n"
         f"Training Accuracy at Best Epoch: "
         f"{best_train_acc:.4f}\n"
-
         f"Training Loss at Best Epoch: "
         f"{best_train_loss:.4f}\n"
-
         f"Validation Loss at Best Epoch: "
         f"{best_val_loss:.4f}\n\n"
-
         f"Saved Best Model Path:\n"
         f"{checkpoint.filepath}\n"
     )
