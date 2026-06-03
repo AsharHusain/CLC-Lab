@@ -9,7 +9,7 @@ import pandas as pd
 import tensorflow as tf
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, classification_report
-from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.applications import ResNet50
 from tensorflow.keras.layers import (
     Input,
     Dense,
@@ -486,7 +486,7 @@ def parse_function(img_path, pose_feat, label):
 
     img = tf.image.resize(img, [IMG_SIZE, IMG_SIZE])
 
-    img = tf.keras.applications.mobilenet_v2.preprocess_input(img)
+    img = tf.keras.applications.resnet50.preprocess_input(img)
 
     return ({"image_input": img, "pose_input": pose_feat}, label)
 
@@ -536,7 +536,7 @@ test_dataset = (
 
 cnn_input = Input(shape=(IMG_SIZE, IMG_SIZE, 3), name="image_input")
 
-base_model = MobileNetV2(include_top=False, weights="imagenet", input_tensor=cnn_input)
+base_model = ResNet50(include_top=False, weights="imagenet", input_tensor=cnn_input)
 
 base_model.trainable = False
 
