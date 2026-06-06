@@ -13,14 +13,16 @@ from tensorflow.keras.layers import (
     Input,
     Dense,
     Concatenate,
-    Conv2D,
-    MaxPooling2D,
-    Flatten,
+    GlobalAveragePooling2D,
     Add,
     ReLU,
     BatchNormalization,
     Multiply,
     Dropout,
+    Conv2D,
+    MaxPooling2D,
+    Flatten,
+    Lambda,
 )
 from tensorflow.keras.models import Model
 from tensorflow.keras.utils import to_categorical
@@ -28,6 +30,10 @@ from tensorflow.keras.callbacks import ModelCheckpoint
 import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
+
+os.environ["TF_CUDNN_USE_AUTOTUNE"] = "0"
+os.environ["XLA_FLAGS"] = "--xla_gpu_autotune_level=0"
+os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=0"
 
 # =========================================================
 # CONFIG
@@ -41,7 +47,7 @@ IMAGE_ROOT = os.path.join(BASE_DIR, "Uniform_Skeletal_Images")
 
 RESULT_LOG_PATH = os.path.join(BASE_DIR, "results_log.txt")
 
-IMG_SIZE = 224
+IMG_SIZE = 227  # AlexNet uses 227x227
 BATCH_SIZE = 32
 EPOCHS = 50
 
@@ -479,15 +485,24 @@ print(X_pose_test.shape)
 AUTOTUNE = tf.data.AUTOTUNE
 
 
+def alexnet_preprocess(img):
+    """Normalize image the same way AlexNet expects: zero-mean per channel."""
+    img = tf.cast(img, tf.float32)
+    # ImageNet channel means
+    mean = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32)
+    img = img - mean
+    return img
+
+
 def parse_function(img_path, pose_feat, label):
 
     img = tf.io.read_file(img_path)
 
     img = tf.image.decode_jpeg(img, channels=3)
 
-    img = tf.image.resize(img, [IMG_SIZE, IMG_SIZE])
+    img = tf.image.resize(img, [IMG_SIZE, IMG_SIZE])  # 227x227 for AlexNet
 
-    img = tf.cast(img, tf.float32) / 255.0
+    img = alexnet_preprocess(img)
 
     return ({"image_input": img, "pose_input": pose_feat}, label)
 
@@ -533,24 +548,40 @@ test_dataset = (
 
 # =========================================================
 # ALEXNET BRANCH
+# AlexNet architecture (Krizhevsky et al., 2012):
+#   Conv1: 96 filters, 11x11, stride 4  -> LRN -> MaxPool
+#   Conv2: 256 filters,  5x5, pad same  -> LRN -> MaxPool
+#   Conv3: 384 filters,  3x3, pad same
+#   Conv4: 384 filters,  3x3, pad same
+#   Conv5: 256 filters,  3x3, pad same  -> MaxPool
+#   FC6:   4096
+#   FC7:   4096
+#   (FC8/output replaced by fusion head)
 # =========================================================
 
 cnn_input = Input(shape=(IMG_SIZE, IMG_SIZE, 3), name="image_input")
 
-x = Conv2D(96, (11, 11), strides=4, activation="relu")(cnn_input)
-x = MaxPooling2D((3, 3), strides=2)(x)
+# --- Block 1 ---
+x = Conv2D(96, kernel_size=11, strides=4, padding="valid", activation="relu")(cnn_input)
+x = MaxPooling2D(pool_size=3, strides=2)(x)
+x = BatchNormalization()(x)  # LRN approximated by BN
 
-x = Conv2D(256, (5, 5), padding="same", activation="relu")(x)
-x = MaxPooling2D((3, 3), strides=2)(x)
+# --- Block 2 ---
+x = Conv2D(256, kernel_size=5, strides=1, padding="same", activation="relu")(x)
+x = MaxPooling2D(pool_size=3, strides=2)(x)
+x = BatchNormalization()(x)
 
-x = Conv2D(384, (3, 3), padding="same", activation="relu")(x)
+# --- Block 3 ---
+x = Conv2D(384, kernel_size=3, strides=1, padding="same", activation="relu")(x)
 
-x = Conv2D(384, (3, 3), padding="same", activation="relu")(x)
+# --- Block 4 ---
+x = Conv2D(384, kernel_size=3, strides=1, padding="same", activation="relu")(x)
 
-x = Conv2D(256, (3, 3), padding="same", activation="relu")(x)
+# --- Block 5 ---
+x = Conv2D(256, kernel_size=3, strides=1, padding="same", activation="relu")(x)
+x = MaxPooling2D(pool_size=3, strides=2)(x)
 
-x = MaxPooling2D((3, 3), strides=2)(x)
-
+# --- Flatten & FC layers ---
 x = Flatten()(x)
 
 x = Dense(4096, activation="relu")(x)
@@ -559,8 +590,17 @@ x = Dropout(0.5)(x)
 x = Dense(4096, activation="relu")(x)
 x = Dropout(0.5)(x)
 
-cnn_proj = Dense(256)(x)
+# --- Feature vector for fusion (replaces FC8) ---
+cnn_features = x  # shape: (batch, 4096)
+
+# =========================================================
+# IMAGE PROJECTION  (4096 -> 256)
+# =========================================================
+
+cnn_proj = Dense(256)(cnn_features)
+
 cnn_proj = BatchNormalization()(cnn_proj)
+
 cnn_proj = ReLU()(cnn_proj)
 
 # =========================================================
@@ -675,16 +715,18 @@ model.summary()
 
 
 # =========================================================
-# SAVE BEST MODEL
+# SAVE BEST MODEL  (.h5 format)
 # =========================================================
 
 checkpoint = ModelCheckpoint(
-    filepath=os.path.join(BASE_DIR, "best_fusion_model.keras"),
+    filepath=os.path.join(BASE_DIR, "best_fusion_model_alexnet.h5"),
     monitor="val_accuracy",
     mode="max",
     save_best_only=True,
+    save_format="h5",
     verbose=1,
 )
+
 # =========================================================
 # CUSTOM LOGGER CALLBACK
 # =========================================================
@@ -718,7 +760,7 @@ class EpochLogger(tf.keras.callbacks.Callback):
 
         print(msg)
 
-        with open(RESULT_LOG_PATH, "a", encoding="utf-8") as f:
+        with open(self.log_path, "a", encoding="utf-8") as f:
 
             f.write(msg)
 
