@@ -725,7 +725,6 @@ checkpoint = ModelCheckpoint(
     monitor="val_accuracy",
     mode="max",
     save_best_only=True,
-    save_format="h5",
     verbose=1,
 )
 
