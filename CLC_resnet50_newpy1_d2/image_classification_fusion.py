@@ -24,12 +24,11 @@ warnings.filterwarnings("ignore")
 # =========================================================
 # CONFIG
 # =========================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CSV_PATH = "/home/navaneeths/Video_Classification/Preprocessing/dwpose_keypoints.csv"
-
-IMAGE_ROOT = "/home/navaneeths/Uniform_Skeletal_Images"
-
-RESULT_LOG_PATH = "/home/navaneeths/Video_Classification/Best_Fusion/results_log.txt"
+CSV_PATH = os.path.join(BASE_DIR, "dwpose_keypoints.csv")
+IMAGE_ROOT = os.path.join(BASE_DIR, "Uniform_Skeletal_Images")
+RESULT_LOG_PATH = os.path.join(BASE_DIR, "results_log.txt")
 
 IMG_SIZE    = 224
 BATCH_SIZE  = 32
@@ -317,7 +316,7 @@ feature_names = [f"f_{i}" for i in range(X_pose_train.shape[1])]
 df_corr     = pd.DataFrame(X_pose_train, columns=feature_names)
 corr_matrix = df_corr.corr()
 
-PLOT_SAVE_DIR = "/home/navaneeths/Video_Classification/Best_Fusion"
+PLOT_SAVE_DIR = os.path.join(BASE_DIR, "plots")
 os.makedirs(PLOT_SAVE_DIR, exist_ok=True)
 
 plt.figure(figsize=(18, 18))
@@ -527,9 +526,11 @@ model.summary()
 # =========================================================
 # SAVE BEST MODEL
 # =========================================================
+MODEL_DIR = os.path.join(BASE_DIR, "models")
+os.makedirs(MODEL_DIR, exist_ok=True)
 
 checkpoint = ModelCheckpoint(
-    filepath="/home/navaneeths/Video_Classification/Our_model/best_fusion.keras",
+    filepath=os.path.join(MODEL_DIR, "best_fusion.keras"),
     monitor="val_accuracy",
     mode="max",
     save_best_only=True,

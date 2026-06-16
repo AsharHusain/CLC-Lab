@@ -26,9 +26,10 @@ warnings.filterwarnings("ignore")
 # CONFIG
 # =========================================================
 
-CSV_PATH = r"C:\Users\navne\OneDrive\Desktop\IIITK\Research\Video_Classification\Preprocessing\dwpose_keypoints.csv"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-IMAGE_ROOT =  r"C:\Users\navne\Pictures\Kathakali\Uniform_Skeletal_Images"
+CSV_PATH = os.path.join(BASE_DIR, "dwpose_keypoints.csv")
+IMAGE_ROOT = os.path.join(BASE_DIR, "Uniform_Skeletal_Images")
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
@@ -38,7 +39,7 @@ EPOCHS = 50
 # LOGGING
 # =========================================================
 
-RESULT_LOG_PATH = r"C:\Users\navne\OneDrive\Desktop\IIITK\Research\Video_Classification\Skeletal_Frames_deep_learning_benchmarks\Mobilenet\Mobilenet_alone\results_log.txt"
+RESULT_LOG_PATH = os.path.join(BASE_DIR, "results_log.txt")
 
 class TeeLogger:
 
@@ -368,16 +369,16 @@ model.summary()
 # SAVE BEST MODEL
 # =========================================================
 
+MODEL_DIR = os.path.join(BASE_DIR, "models")
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+MODEL_PATH = os.path.join(MODEL_DIR, "best_mobilenet.keras")
+
 checkpoint = ModelCheckpoint(
-
-    filepath=r"C:\Users\navne\OneDrive\Desktop\IIITK\Research\Video_Classification\Comparison\Mobilenet\best_fusion_model.keras",
-
+    filepath=MODEL_PATH,
     monitor="val_accuracy",
-
     mode="max",
-
     save_best_only=True,
-
     verbose=1
 )
 
